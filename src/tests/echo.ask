@@ -1,0 +1,38 @@
+; this program echos input!
+
+const hello_world = "Welcome to the \"echo program\"! please pass some input"
+const hi: [u8, 2] = [1, 2]
+let user_input: [u8, 2]
+
+extern fn _start {
+    $rdx = hello_world
+    $rsi = sizeof(hello_world)
+    print()
+
+    $rax = 3
+    while $rax-- != 0 {
+        get_input()
+        $rdx = $rax
+        $rsi = user_input
+        print()
+    }
+}
+
+fn get_input {
+    ; sys_read
+    $rax = 0
+    ; stdin
+    $rdi = 0
+    $rsi = user_input
+    $rdx = sizeof(user_input)
+    !syscall
+}
+
+prints the string in rsi and size in rdx
+fn print {
+    ; sys_write
+    $rax = 1
+    ; stdout
+    $rdi = 1
+    !syscall
+}
