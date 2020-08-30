@@ -5,11 +5,16 @@ use crate::tokenizer::{
     Identifier,
     Operator,
     Separator,
+    Type,
+    get_type,
+    get_v_description,
+    get_literal,
 };
 
 #[derive(Debug)]
 pub enum Statement {
-    NewConst(Identifier, Literal)
+    NewConst(Identifier, Literal, Option<(Type, usize)>),
+    NewLet(Identifier, Option<Literal>, Option<(Type, usize)>)
 }
 
 enum Expression<'a> {
@@ -49,37 +54,64 @@ impl Parser<'_> {
     }
 
     pub fn find_statements(&mut self) {
-        for i in 0..10 {
-            self.find_statement()
+        for _ in 0..10 {
+            match self.find_statement() {
+                Some(s) => self.statements.push(s),
+                None => {}
+            }
         }
     }
 
-    pub fn find_statement(&mut self) {
+    pub fn find_statement(&mut self) -> Option<Statement> {
         match self.next() {
             Token::Keyword(kw) => match kw {
-                Keyword::Const => {
-                    let var = self.next();
-                    match var {
-                        Token::Identifier(Identifier::Variable(_)) => {}
+                Keyword::Const | Keyword::Let => {
+                    let kw_copy = kw.clone();
+                    let var = match self.next() {
+                        Token::Identifier(Identifier::Variable(n)) => n.clone(),
                         _ => panic!("const variable is invalid")
-                    }
-                    let var_type = self.take_to_tokens(&[
+                    };
+                    let var_description = self.take_to_tokens(&[
                         Token::Operator(Operator::Assign),
                         Token::Newline,
                     ]);
-                    if var_type.len() != 0 {
-                        // type was found
-                    }
-                    assert_eq!(*self.next(), Token::Operator(Operator::Assign));
-                    let literal = self.take_to_tokens(&[
+                    let description: Option<(Type, usize)> = if var_description.len() != 0 {
+                        Some(get_v_description(&var_description))
+                    } else {
+                        None
+                    };
+                    let mut literal_tokens = self.take_to_tokens(&[
                         Token::Newline,
                     ]);
-                    // let expr = self.parse_expression(&assignment);
+                    match kw_copy {
+                        Keyword::Const => {
+                            assert_eq!(*literal_tokens.first().unwrap(), Token::Operator(Operator::Assign));
+                            literal_tokens.remove(0);
+                            Some(Statement::NewConst(Identifier::Variable(var), get_literal(&literal_tokens), description))
+                        },
+                        Keyword::Let => {
+                            // let literal = if self.peek().unwrap() == Token::Operator(Operator::Assign) {
+                            //     self.next();
+                            //     Some(get_literal(&self.take_to_tokens(&[Token::Newline])))
+                            // } else {
+                            //     None
+                            // };
+                            // Some(Statement::NewLet(Identifier::Variable(var), literal, description))
+                            let literal = match &self.peek().unwrap() {
+                                Token::Operator(Operator::Assign) => {
+                                    self.next();
+                                    Some(get_literal(&self.take_to_tokens(&[Token::Newline])))
+                                },
+                                _ => None,
+                            };
+                            Some(Statement::NewLet(Identifier::Variable(var), literal, description))
+                        },
+                        _ => panic!("impossible")
+                    }
                 }
-                Keyword::Let => {}
-                _ => {}
+                _ => None
             }
-            _ => {}
+            _ => None
         }
     }
 

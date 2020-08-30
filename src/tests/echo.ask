@@ -1,20 +1,19 @@
 ; this program echos input!
 
 const hello_world = "Welcome to the \"echo program\"! please pass some input"
-const hi: [u8, 2] = [1, 2]
-let user_input: [u8, 2]
+let user_input: [byte, 2]
 
 extern fn _start {
     $rdx = hello_world
     $rsi = sizeof(hello_world)
-    print()
+    call(print)
 
     $rax = 3
     while $rax-- != 0 {
-        get_input()
+        call(print)
         $rdx = $rax
         $rsi = user_input
-        print()
+        call(print)
     }
 }
 
@@ -28,7 +27,7 @@ fn get_input {
     !syscall
 }
 
-prints the string in rsi and size in rdx
+; prints the string in rsi and size in rdx
 fn print {
     ; sys_write
     $rax = 1

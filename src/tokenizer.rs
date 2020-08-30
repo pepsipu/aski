@@ -4,7 +4,6 @@ use crate::stream::{
     IStream,
 };
 use crate::combinator;
-use std::fmt::format;
 
 
 pub struct Tokenizer<'a> {
@@ -148,6 +147,13 @@ pub fn get_sep(c: u8) -> Option<Separator> {
     }
 }
 
+pub fn get_type(t: &Vec<u8>) -> Option<Type> {
+    match &**t {
+        b"byte" => Some(Type::Uint8),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     Eof,
@@ -163,7 +169,7 @@ pub enum Token {
 pub enum Literal {
     String(Vec<u8>),
     Int(usize),
-    Array(Type, usize),
+    Array(Vec<Literal>, Type, usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -212,4 +218,34 @@ pub enum Keyword {
 
 pub enum Type {
     Uint8,
+}
+
+pub fn get_v_description(vt: &Vec<Token>) -> (Type, usize) {
+    assert_eq!(vt.len(), 6);
+    assert_eq!(vt[0], Token::Separator(Separator::Colon));
+    assert_eq!(vt[1], Token::Separator(Separator::OpenBracket));
+    let v_type = match &vt[2] {
+        Token::Identifier(Identifier::Variable(t)) => get_type(t).unwrap(),
+        _ => panic!("invalid type"),
+    };
+    assert_eq!(vt[3], Token::Separator(Separator::Comma));
+    let v_size = match &vt[4] {
+        Token::Literal(Literal::Int(i)) => i,
+        _ => panic!("invalid size"),
+    };
+    assert_eq!(vt[5], Token::Separator(Separator::CloseBracket));
+    (v_type, *v_size)
+}
+
+pub fn get_literal(vt: &Vec<Token>) -> Literal {
+    assert_ne!(vt.len(), 0);
+    match vt.first().unwrap() {
+        Token::Literal(l) => l.clone(),
+        // add support for constant arrays later on
+        // _ => {
+        //     assert_eq!(vt[0], Token::Separator(Separator::OpenBracket));
+        //
+        // }
+        _ => panic!("literal not recognized"),
+    }
 }
