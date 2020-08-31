@@ -1,0 +1,3 @@
+extern fn _start {
+    $rdx = $rax + sizeof(nice)
+}

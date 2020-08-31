@@ -1,3 +1,4 @@
+mod compiler;
 mod parser;
 mod combinator;
 

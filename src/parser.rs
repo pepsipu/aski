@@ -9,7 +9,6 @@ use crate::tokenizer::{
     get_v_description,
     get_literal,
 };
-use std::borrow::Borrow;
 
 type Scope = Vec<Statement>;
 
@@ -17,6 +16,7 @@ type Scope = Vec<Statement>;
 pub enum Statement {
     NewConst { name: Identifier, literal: Literal, v_type: Option<(Type, usize)>},
     NewLet { name: Identifier, literal: Option<Literal>, v_type: Option<(Type, usize)>},
+    RegisterAssign { register: Vec<u8>, expression: Expression },
     Scoped { scoped: ScopeImpl },
 }
 
@@ -34,9 +34,12 @@ pub struct ScopeImpl {
 }
 
 #[derive(Debug, Clone)]
-enum Expression<'a> {
-    Binary { left: &'a Expression<'a>, right: &'a Expression<'a>, operator: Operator },
-    Unary { operand: &'a Expression<'a>, operator: Operator },
+enum Expression {
+    Binary { left: Box<Expression>, right: Box<Expression>, operator: Operator },
+    Unary { operand: Box<Expression>, operator: Operator },
+    Number { value: usize },
+    Register { reg: Vec<u8> },
+    SizeOf { var: Identifier },
 }
 
 pub struct Parser<'a> {
@@ -44,6 +47,8 @@ pub struct Parser<'a> {
     idx: usize,
     scope_stack: Vec<ScopeImpl>,
 }
+
+const PRECEDENCE: [Operator; 2] = [Operator::Add, Operator::Multiply];
 
 impl Parser<'_> {
     pub fn new(tokens: &Vec<Token>) -> Parser {
@@ -154,13 +159,81 @@ impl Parser<'_> {
             }
             Token::Identifier(id) => match id {
                 Identifier::Register(r) => {
-                    None
+                    let r_copy = r.to_vec();
+                    assert_eq!(Token::Operator(Operator::Assign), *self.next());
+                    let expression_tokens = self.take_to_tokens(&[Token::Newline]);
+                    let expression = self.parse_expression(expression_tokens);
+                    Some(Statement::RegisterAssign {
+                        register: r_copy,
+                        expression
+                    })
                 },
                 _ => None,
             },
             _ => None
         }
     }
+
+    pub fn parse_expression(&self, tks: Vec<Token>) -> Expression {
+        let op_pos = {
+            let mut ret: Option<usize> = None;
+            for check_op in PRECEDENCE.iter() {
+                 if let Some(i) = tks.iter().position(|token| {
+                    let op = if let Token::Operator(op) = token {
+                        op
+                    } else {
+                        return false;
+                    };
+                    check_op == op
+                 }) {
+                     ret = Some(i);
+                     break;
+                 }
+            }
+            ret
+        };
+        match op_pos {
+            Some(op) => {
+                let left = &tks[..op];
+                let right = &tks[op + 1..];
+                Expression::Binary {
+                    left: Box::new(self.parse_expression(left.to_vec())),
+                    right: Box::new(self.parse_expression(right.to_vec())),
+                    operator: if let Token::Operator(operator) = tks[op].clone() {
+                        operator
+                    } else {
+                        panic!("impossible");
+                    }
+                }
+            }
+            None => {
+                // binary expression not applicable
+                // for now just check if it's a number
+                match &tks[0] {
+                    Token::Literal(Literal::Int(i)) => Expression::Number { value: *i },
+                    Token::Identifier(Identifier::Register(r)) => Expression::Register {
+                        reg: r.to_vec()
+                    },
+                    Token::Keyword(Keyword::SizeOf) => {
+                        assert_eq!(Token::Separator(Separator::OpenParentheses), tks[1]);
+                        assert_eq!(Token::Separator(Separator::CloseParentheses), tks[3]);
+                        Expression::SizeOf {
+                            var: if let Token::Identifier(i) = tks[2].clone() {
+                                i
+                            } else {
+                                panic!("bad token for sizeof")
+                            },
+                        }
+                    },
+                    _ => panic!("bad token")
+                }
+            }
+        }
+    }
+
+    // pub fn r_parse_expression(tree: Expression) -> Expression {
+    //     tree
+    // }
 
     pub fn create_function(&mut self, name: &Token, external: bool) {
         let name = match name {
@@ -194,7 +267,7 @@ impl Parser<'_> {
     }
 
     pub fn take_to_tokens(&mut self, tks: &[Token]) -> Vec<Token> {
-        let taken_tokens = self.tokens[self.idx..].iter().take_while(|curr_token| {
+        let taken = self.tokens[self.idx..].iter().take_while(|curr_token| {
             for tk in tks {
                 if tk == *curr_token {
                     return false;
@@ -202,8 +275,20 @@ impl Parser<'_> {
             }
             return true;
         });
-        let res: Vec<Token> = taken_tokens.cloned().collect();
+        let res: Vec<Token> = taken.cloned().collect();
         self.idx += res.len();
         res
+    }
+
+    pub fn take_given_to_tokens(given_tks: &Vec<Token>, tks: &[Token]) -> Vec<Token> {
+        let taken = given_tks.iter().take_while(|curr_token| {
+            for tk in tks {
+                if tk == *curr_token {
+                    return false;
+                }
+            }
+            return true;
+        });
+        taken.cloned().collect()
     }
 }

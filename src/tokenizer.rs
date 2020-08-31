@@ -85,8 +85,14 @@ impl Tokenizer<'_> {
             }
         } else if peek == b'$' {
             self.istream.next();
-            let reg = self.istream.take_while(combinator::is_register_name);
-            Token::Identifier(Identifier::Register(reg))
+            if self.istream.peek(0).unwrap() == b'*' {
+                self.istream.next();
+                let reg = self.istream.take_while(combinator::is_register_name);
+                Token::Identifier(Identifier::DerefRegister(reg))
+            } else {
+                let reg = self.istream.take_while(combinator::is_register_name);
+                Token::Identifier(Identifier::Register(reg))
+            }
         } else {
             let sep = get_sep(peek);
             match sep {
@@ -113,7 +119,7 @@ pub fn get_kw(s: &Vec<u8>) -> Option<Keyword> {
         b"extern" => Some(Keyword::External),
         b"while" => Some(Keyword::While),
         b"call" => Some(Keyword::Call),
-        b"sizeof" => Some(Keyword::Call),
+        b"sizeof" => Some(Keyword::SizeOf),
         _ => None
     }
 }
@@ -178,6 +184,7 @@ pub enum Literal {
 pub enum Identifier {
     Variable(Vec<u8>),
     Register(Vec<u8>),
+    DerefRegister(Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -216,6 +223,7 @@ pub enum Keyword {
     External,
     While,
     Call,
+    SizeOf,
 }
 #[derive(Debug, Clone, PartialEq)]
 
