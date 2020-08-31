@@ -1,20 +1,16 @@
 ; this program echos input!
 
-const hello_world = "Welcome to the \"echo program\"! please pass some input"
-let user_input: [byte, 2]
+; const hello_world = "Welcome to the \"echo program\"! please pass some input"
+; let user_input: [byte, 2]
 
 extern fn _start {
     $rdx = hello_world
     $rsi = sizeof(hello_world)
     call(print)
 
-    $rax = 3
-    while $rax-- != 0 {
-        call(print)
-        $rdx = $rax
-        $rsi = user_input
-        call(print)
-    }
+    $rdx = $rax
+    $rsi = user_input
+    call(get_input)
 }
 
 fn get_input {

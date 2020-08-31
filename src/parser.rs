@@ -6,15 +6,18 @@ use crate::tokenizer::{
     Operator,
     Separator,
     Type,
-    get_type,
     get_v_description,
     get_literal,
 };
 
-#[derive(Debug)]
+type Scope = Vec<Statement>;
+
+#[derive(Debug, Clone)]
 pub enum Statement {
-    NewConst(Identifier, Literal, Option<(Type, usize)>),
-    NewLet(Identifier, Option<Literal>, Option<(Type, usize)>)
+    NewConst { name: Identifier, literal: Literal, v_type: Option<(Type, usize)>},
+    NewLet { name: Identifier, literal: Option<Literal>, v_type: Option<(Type, usize)>},
+    Fn { f: Function, scope: Scope },
+    Scope { scope: Scope }
 }
 
 enum Expression<'a> {
@@ -22,18 +25,28 @@ enum Expression<'a> {
     Unary { operand: &'a Expression<'a>, operator: Operator },
 }
 
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    name: Vec<u8>,
+    external: bool,
+}
+
+
 pub struct Parser<'a> {
-    statements: Vec<Statement>,
     tokens: &'a Vec<Token>,
     idx: usize,
+    current_fn: Option<Function>,
+    scope_stack: Vec<Scope>,
 }
 
 impl Parser<'_> {
     pub fn new(tokens: &Vec<Token>) -> Parser {
         let mut parser = Parser {
             tokens,
-            statements: Vec::new(),
             idx: 0,
+            current_fn: None,
+            scope_stack: vec![vec![]],
         };
         parser.find_statements();
         parser
@@ -54,15 +67,15 @@ impl Parser<'_> {
     }
 
     pub fn find_statements(&mut self) {
-        for _ in 0..10 {
-            match self.find_statement() {
-                Some(s) => self.statements.push(s),
-                None => {}
+        while self.tokens[self.idx] != Token::Eof {
+            match self.get_statement() {
+                Some(s) => self.add_statement(s),
+                None => {},
             }
         }
     }
 
-    pub fn find_statement(&mut self) -> Option<Statement> {
+    pub fn get_statement(&mut self) -> Option<Statement> {
         match self.next() {
             Token::Keyword(kw) => match kw {
                 Keyword::Const | Keyword::Let => {
@@ -87,16 +100,13 @@ impl Parser<'_> {
                         Keyword::Const => {
                             assert_eq!(*literal_tokens.first().unwrap(), Token::Operator(Operator::Assign));
                             literal_tokens.remove(0);
-                            Some(Statement::NewConst(Identifier::Variable(var), get_literal(&literal_tokens), description))
+                            Some(Statement::NewConst {
+                                name: Identifier::Variable(var),
+                                literal: get_literal(&literal_tokens),
+                                v_type: description,
+                            })
                         },
                         Keyword::Let => {
-                            // let literal = if self.peek().unwrap() == Token::Operator(Operator::Assign) {
-                            //     self.next();
-                            //     Some(get_literal(&self.take_to_tokens(&[Token::Newline])))
-                            // } else {
-                            //     None
-                            // };
-                            // Some(Statement::NewLet(Identifier::Variable(var), literal, description))
                             let literal = match &self.peek().unwrap() {
                                 Token::Operator(Operator::Assign) => {
                                     self.next();
@@ -104,21 +114,88 @@ impl Parser<'_> {
                                 },
                                 _ => None,
                             };
-                            Some(Statement::NewLet(Identifier::Variable(var), literal, description))
+                            Some(Statement::NewLet {
+                                literal,
+                                name: Identifier::Variable(var),
+                                v_type: description,
+                            })
                         },
                         _ => panic!("impossible")
                     }
                 }
+                Keyword::External => {
+                    // for now, only functions can be global
+                    assert_eq!(*self.next(), Token::Keyword(Keyword::Function));
+                    let name_token = self.next().clone();
+                    self.create_function(&name_token, true);
+                    None
+                },
+                Keyword::Function => {
+                    let name_token = self.next().clone();
+                    self.create_function(&name_token, false);
+                    None
+                },
                 _ => None
             }
+            Token::Separator(sep) => match sep {
+                Separator::CloseBrace => {
+                    // because the scope after a global scope is always a function's scope
+                    // we can assume if there's a current function and a 2nd scope the 2nd scope
+                    // belongs to the function
+                    match &self.current_fn {
+                        Some(f) => {
+                            if self.scope_stack.len() == 2 {
+                                let function_scope = self.scope_stack.pop().unwrap();
+                                self.add_statement(Statement::Fn {
+                                    f: f.clone(),
+                                    scope: function_scope,
+                                });
+                                self.current_fn = None;
+                            }
+                        },
+                        None => {}
+                    }
+                    None
+                },
+                Separator::OpenBrace => {
+                    self.scope_stack.push(vec![]);
+                    None
+                }
+                _ => None,
+            }
+            Token::Identifier(id) => match id {
+                Identifier::Register(r) => {
+                    None
+                },
+                _ => None,
+            },
             _ => None
         }
     }
 
-    // pub fn parse_expression(&self, expression: &Vec<Token>) -> Expression {}
+    pub fn create_function(&mut self, name: &Token, external: bool) {
+        match &self.current_fn {
+            Some(_old_f) => panic!("no nested functions"),
+            None => {
+                self.current_fn = Some(Function {
+                    external,
+                    name: match name {
+                        Token::Identifier(Identifier::Variable(n)) => n.clone(),
+                        _ => panic!("token is bad"),
+                    },
+                });
+            },
+        };
+    }
+
+    pub fn add_statement(&mut self, s: Statement) {
+        let scope = &mut self.scope_stack.pop().unwrap();
+        scope.push(s);
+        self.scope_stack.push(scope.to_vec());
+    }
 
     pub fn get_statements(&self) -> &Vec<Statement> {
-        &self.statements
+        &self.scope_stack.first().unwrap()
     }
 
     pub fn take_to_tokens(&mut self, tks: &[Token]) -> Vec<Token> {

@@ -112,6 +112,8 @@ pub fn get_kw(s: &Vec<u8>) -> Option<Keyword> {
         b"fn" => Some(Keyword::Function),
         b"extern" => Some(Keyword::External),
         b"while" => Some(Keyword::While),
+        b"call" => Some(Keyword::Call),
+        b"sizeof" => Some(Keyword::Call),
         _ => None
     }
 }
@@ -213,6 +215,7 @@ pub enum Keyword {
     Function,
     External,
     While,
+    Call,
 }
 #[derive(Debug, Clone, PartialEq)]
 
