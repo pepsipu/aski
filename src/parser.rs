@@ -9,6 +9,7 @@ use crate::tokenizer::{
     get_v_description,
     get_literal,
 };
+use std::borrow::Borrow;
 
 type Scope = Vec<Statement>;
 
@@ -16,28 +17,32 @@ type Scope = Vec<Statement>;
 pub enum Statement {
     NewConst { name: Identifier, literal: Literal, v_type: Option<(Type, usize)>},
     NewLet { name: Identifier, literal: Option<Literal>, v_type: Option<(Type, usize)>},
-    Fn { f: Function, scope: Scope },
-    Scope { scope: Scope }
+    Scoped { scoped: ScopeImpl },
 }
 
+#[derive(Debug, Clone)]
+enum ScopeImplType {
+    Global,
+    Fn { name: Vec<u8>, external: bool },
+    If,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScopeImpl {
+    scope_type: ScopeImplType,
+    scope: Scope,
+}
+
+#[derive(Debug, Clone)]
 enum Expression<'a> {
     Binary { left: &'a Expression<'a>, right: &'a Expression<'a>, operator: Operator },
     Unary { operand: &'a Expression<'a>, operator: Operator },
 }
 
-
-#[derive(Debug, Clone)]
-pub struct Function {
-    name: Vec<u8>,
-    external: bool,
-}
-
-
 pub struct Parser<'a> {
     tokens: &'a Vec<Token>,
     idx: usize,
-    current_fn: Option<Function>,
-    scope_stack: Vec<Scope>,
+    scope_stack: Vec<ScopeImpl>,
 }
 
 impl Parser<'_> {
@@ -45,8 +50,10 @@ impl Parser<'_> {
         let mut parser = Parser {
             tokens,
             idx: 0,
-            current_fn: None,
-            scope_stack: vec![vec![]],
+            scope_stack: vec![ScopeImpl {
+                scope_type: ScopeImplType::Global,
+                scope: vec![]
+            }],
         };
         parser.find_statements();
         parser
@@ -139,28 +146,10 @@ impl Parser<'_> {
             }
             Token::Separator(sep) => match sep {
                 Separator::CloseBrace => {
-                    // because the scope after a global scope is always a function's scope
-                    // we can assume if there's a current function and a 2nd scope the 2nd scope
-                    // belongs to the function
-                    match &self.current_fn {
-                        Some(f) => {
-                            if self.scope_stack.len() == 2 {
-                                let function_scope = self.scope_stack.pop().unwrap();
-                                self.add_statement(Statement::Fn {
-                                    f: f.clone(),
-                                    scope: function_scope,
-                                });
-                                self.current_fn = None;
-                            }
-                        },
-                        None => {}
-                    }
+                    let done_scope = self.scope_stack.pop().unwrap();
+                    self.add_statement(Statement::Scoped { scoped: done_scope });
                     None
                 },
-                Separator::OpenBrace => {
-                    self.scope_stack.push(vec![]);
-                    None
-                }
                 _ => None,
             }
             Token::Identifier(id) => match id {
@@ -174,28 +163,34 @@ impl Parser<'_> {
     }
 
     pub fn create_function(&mut self, name: &Token, external: bool) {
-        match &self.current_fn {
-            Some(_old_f) => panic!("no nested functions"),
-            None => {
-                self.current_fn = Some(Function {
-                    external,
-                    name: match name {
-                        Token::Identifier(Identifier::Variable(n)) => n.clone(),
-                        _ => panic!("token is bad"),
-                    },
-                });
-            },
+        let name = match name {
+            Token::Identifier(Identifier::Variable(n)) => n.clone(),
+            _ => panic!("token is bad"),
         };
+        // check for nested functions
+        if self.scope_stack.iter().any(|scope| match &scope.scope_type {
+            ScopeImplType::Fn { name, external } => true,
+            _ => false,
+        }) {
+            panic!("no nested functions");
+        }
+        self.scope_stack.push(ScopeImpl {
+            scope: vec![],
+            scope_type: ScopeImplType::Fn {
+                name,
+                external,
+            }
+        })
+
     }
 
     pub fn add_statement(&mut self, s: Statement) {
-        let scope = &mut self.scope_stack.pop().unwrap();
-        scope.push(s);
-        self.scope_stack.push(scope.to_vec());
+        let len = self.scope_stack.len();
+        self.scope_stack[len - 1].scope.push(s);
     }
 
-    pub fn get_statements(&self) -> &Vec<Statement> {
-        &self.scope_stack.first().unwrap()
+    pub fn get_statements(&self) -> &ScopeImpl {
+        self.scope_stack.first().unwrap()
     }
 
     pub fn take_to_tokens(&mut self, tks: &[Token]) -> Vec<Token> {
