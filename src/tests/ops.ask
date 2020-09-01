@@ -1,3 +1,21 @@
+const hello = "hello"
+let nice: [byte, 32]
+
 extern fn _start {
-    $rdx = $rax + sizeof(nice)
+    $rsi = hello
+    $rdx = sizeof(hello)
+    call(print)
+
+    $rsi = 0
+    if $rsi == 0 {
+        $rsi = hello
+        $rdx = sizeof(hello)
+        call(print)
+    }
+}
+
+fn print {
+    $rax = 1
+    $rdi = 1
+    #syscall
 }

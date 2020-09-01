@@ -17,38 +17,42 @@ pub enum Statement {
     NewConst { name: Identifier, literal: Literal, v_type: Option<(Type, usize)>},
     NewLet { name: Identifier, literal: Option<Literal>, v_type: Option<(Type, usize)>},
     RegisterAssign { register: Vec<u8>, expression: Expression },
+    RegisterDerefAssign { register: Vec<u8>, expression: Expression },
+    InlineAssembly { instructions: Vec<u8> },
+    Call { f: Vec<u8> },
     Scoped { scoped: ScopeImpl },
 }
 
 #[derive(Debug, Clone)]
-enum ScopeImplType {
+pub enum ScopeImplType {
     Global,
     Fn { name: Vec<u8>, external: bool },
-    If,
+    If { left: Expression, right: Expression, condition: Operator },
 }
 
 #[derive(Debug, Clone)]
 pub struct ScopeImpl {
-    scope_type: ScopeImplType,
-    scope: Scope,
+    pub(crate) scope_type: ScopeImplType,
+    pub(crate) scope: Scope,
 }
 
 #[derive(Debug, Clone)]
-enum Expression {
+pub enum Expression {
     Binary { left: Box<Expression>, right: Box<Expression>, operator: Operator },
     Unary { operand: Box<Expression>, operator: Operator },
     Number { value: usize },
     Register { reg: Vec<u8> },
+    Variable { var: Vec<u8> },
     SizeOf { var: Identifier },
 }
 
 pub struct Parser<'a> {
     tokens: &'a Vec<Token>,
     idx: usize,
-    scope_stack: Vec<ScopeImpl>,
+    pub scope_stack: Vec<ScopeImpl>,
 }
 
-const PRECEDENCE: [Operator; 2] = [Operator::Add, Operator::Multiply];
+const PRECEDENCE: [Operator; 3] = [Operator::Add, Operator::Subtract, Operator::Multiply];
 
 impl Parser<'_> {
     pub fn new(tokens: &Vec<Token>) -> Parser {
@@ -147,6 +151,39 @@ impl Parser<'_> {
                     self.create_function(&name_token, false);
                     None
                 },
+                Keyword::Call => {
+                    assert_eq!(Token::Separator(Separator::OpenParentheses), *self.next());
+                    let f = self.next().clone();
+                    assert_eq!(Token::Separator(Separator::CloseParentheses), *self.next());
+                    Some(Statement::Call { f: if let Token::Identifier(Identifier::Variable(v)) = f {
+                        v.clone()
+                    } else {
+                        panic!("bad call");
+                    }})
+                },
+                Keyword::If => {
+                    let left_tokens = self.take_to_tokens(&[
+                        Token::Operator(Operator::Equal),
+                        Token::Operator(Operator::NotEqual),
+                    ]);
+                    let left = self.parse_expression(left_tokens);
+                    let condition = self.next().clone();
+                    let right_tokens = self.take_to_tokens(&[
+                        Token::Separator(Separator::OpenBrace),
+                    ]);
+                    let right = self.parse_expression(right_tokens);
+                    let scope = ScopeImpl { scope_type: ScopeImplType::If {
+                        left,
+                        right,
+                        condition: if let Token::Operator(o) = condition {
+                            o.clone()
+                        } else {
+                            panic!("bad if statement");
+                        }
+                    }, scope: vec![] };
+                    self.scope_stack.push(scope);
+                    None
+                },
                 _ => None
             }
             Token::Separator(sep) => match sep {
@@ -168,8 +205,21 @@ impl Parser<'_> {
                         expression
                     })
                 },
+                Identifier::DerefRegister(r) => {
+                    let r_copy = r.to_vec();
+                    assert_eq!(Token::Operator(Operator::Assign), *self.next());
+                    let expression_tokens = self.take_to_tokens(&[Token::Newline]);
+                    let expression = self.parse_expression(expression_tokens);
+                    Some(Statement::RegisterDerefAssign {
+                        register: r_copy,
+                        expression
+                    })
+                }
                 _ => None,
             },
+            Token::Inline(inline) => Some(Statement::InlineAssembly {
+                instructions: inline.to_vec(),
+            }),
             _ => None
         }
     }
@@ -217,14 +267,17 @@ impl Parser<'_> {
                     Token::Keyword(Keyword::SizeOf) => {
                         assert_eq!(Token::Separator(Separator::OpenParentheses), tks[1]);
                         assert_eq!(Token::Separator(Separator::CloseParentheses), tks[3]);
-                        Expression::SizeOf {
-                            var: if let Token::Identifier(i) = tks[2].clone() {
-                                i
+                        Expression::Variable {
+                            var: if let Token::Identifier(Identifier::Variable(v)) = tks[2].clone() {
+                                let mut vc = v.to_vec().to_ascii_uppercase();
+                                vc.extend_from_slice(b"_LEN");
+                                vc
                             } else {
                                 panic!("bad token for sizeof")
                             },
                         }
                     },
+                    Token::Identifier(Identifier::Variable(v)) => Expression::Variable { var: v.to_vec() },
                     _ => panic!("bad token")
                 }
             }

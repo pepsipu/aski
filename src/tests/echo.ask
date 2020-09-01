@@ -1,7 +1,7 @@
 ; this program echos input!
 
-; const hello_world = "Welcome to the \"echo program\"! please pass some input"
-; let user_input: [byte, 2]
+const hello_world = "Welcome to the \"echo program\"! please pass some input"
+let user_input: [byte, 2]
 
 extern fn _start {
     $rdx = hello_world
@@ -20,7 +20,7 @@ fn get_input {
     $rdi = 0
     $rsi = user_input
     $rdx = sizeof(user_input)
-    !syscall
+    #syscall
 }
 
 ; prints the string in rsi and size in rdx
@@ -29,5 +29,5 @@ fn print {
     $rax = 1
     ; stdout
     $rdi = 1
-    !syscall
+    #syscall
 }

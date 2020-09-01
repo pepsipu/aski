@@ -54,16 +54,21 @@ impl Tokenizer<'_> {
             self.istream.take_to_c(b'\n');
             return self.take_token();
         }
+        if peek == b'#' {
+            self.istream.next();
+            let inline_asm = self.istream.take_while(|c, _| c != b'\n');
+            return Token::Inline(inline_asm);
+        }
         if combinator::is_quote(peek, None) {
             // take open quote
             self.istream.next();
-            let s: Vec<u8> = self.istream.take_while(&|c: u8, tk: Option<&mut IStream>| -> bool {
+            let ss = self.istream.take_while(&|c: u8, tk: Option<&mut IStream>| -> bool {
                 // we should keep taking if !quote or it can be a quote but the prev char is \
                 !combinator::is_quote(c, None) || tk.unwrap().peek(-1).unwrap() == b'\\'
             });
             // take closing quote
             self.istream.next();
-            Token::Literal(Literal::String(s))
+            Token::Literal(Literal::String(ss))
         } else if combinator::is_int(peek, None) {
             let num = self.istream.take_while(&combinator::is_int);
             let num_str: &str = str::from_utf8(&num).unwrap();
@@ -117,7 +122,7 @@ pub fn get_kw(s: &Vec<u8>) -> Option<Keyword> {
         b"let" => Some(Keyword::Let),
         b"fn" => Some(Keyword::Function),
         b"extern" => Some(Keyword::External),
-        b"while" => Some(Keyword::While),
+        b"if" => Some(Keyword::If),
         b"call" => Some(Keyword::Call),
         b"sizeof" => Some(Keyword::SizeOf),
         _ => None
@@ -158,6 +163,7 @@ pub fn get_sep(c: u8) -> Option<Separator> {
 pub fn get_type(t: &Vec<u8>) -> Option<Type> {
     match &**t {
         b"byte" => Some(Type::Uint8),
+        b"qword" => Some(Type::Uint64),
         _ => None,
     }
 }
@@ -166,6 +172,7 @@ pub fn get_type(t: &Vec<u8>) -> Option<Type> {
 pub enum Token {
     Eof,
     Newline,
+    Inline(Vec<u8>),
     Literal(Literal),
     Identifier(Identifier),
     Keyword(Keyword),
@@ -221,7 +228,7 @@ pub enum Keyword {
     Let,
     Function,
     External,
-    While,
+    If,
     Call,
     SizeOf,
 }
@@ -229,6 +236,7 @@ pub enum Keyword {
 
 pub enum Type {
     Uint8,
+    Uint64,
 }
 
 pub fn get_v_description(vt: &Vec<Token>) -> (Type, usize) {

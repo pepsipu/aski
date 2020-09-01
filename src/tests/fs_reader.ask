@@ -1,0 +1,85 @@
+const hello = "welcome to fs reader!"
+
+const file_question = "what file would you like to read?"
+
+const no_input_err = "no input given!"
+
+let user_buf: [byte, 128]
+
+; 64 chunks to store file data
+let file_data: [qword, 64]
+
+extern fn _start {
+    $rsi = hello
+    $rdx = sizeof(hello)
+    call(print)
+
+    call(menu)
+}
+
+fn menu {
+    $rsi = file_question
+    $rdx = sizeof(file_question)
+    call(print)
+
+    $rsi = user_buf
+    $rdx = sizeof(user_buf)
+    call(read_input)
+
+    ; account for newline
+    if $rax == 1 {
+        $rsi = no_input_err
+        $rdx = sizeof(no_input_err)
+        call(print)
+        call(exit)
+    }
+
+    ; null terminate input & remove newline
+    $rsi = user_buf
+    $rdi = $rsi + $rax - 1
+    $*rdi = 0
+
+    $rdi = user_buf
+    call(open)
+
+    ; give fd of file to rdi
+    $rdi = $rax
+    $rax = 0
+    $rsi = file_data
+    $rdx = sizeof(file_data)
+    #syscall
+
+    $rdx = $rax
+    $rsi = file_data
+    call(print)
+
+    call(menu)
+}
+
+fn read_input {
+    $rax = 0
+    $rdi = 0
+    #syscall
+}
+
+; prints the string in rsi and size in rdx
+fn print {
+    ; sys_write
+    $rax = 1
+    ; stdout
+    $rdi = 1
+    #syscall
+}
+
+fn exit {
+    $rax = 60
+    $rdi = 0
+    #syscall
+}
+
+fn open {
+    $rax = 2
+    $rsi = 0
+    $rdx = 0
+    #syscall
+}
