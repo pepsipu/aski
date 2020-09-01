@@ -1,6 +1,6 @@
 ## Aski: Modern Assembly
 
-[![Run on Repl.it](https://repl.it/badge/github/pepsipu/aski)](https://repl.it/@pepsipu/aski)
+[![Run on Repl.it](https://repl.it/badge/github/aski/aski)](https://repl.it/@aski/aski)
 
 Aski's meant to replace Assembly's painful and unintuitive linear syntax.
 
