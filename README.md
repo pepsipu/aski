@@ -241,5 +241,3 @@ fn open {
     #syscall
 }
 ```
-
-PS: nasm is included in the repo for repl.it
